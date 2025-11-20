@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Heart, Info } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useInventory } from '../../context/InventoryContext';
 import ProductModal from './ProductModal';
-import { useEffect } from 'react';
 
 const ProductCard = ({ product }) => {
   const [showModal, setShowModal] = useState(false);
@@ -27,12 +26,8 @@ const ProductCard = ({ product }) => {
   const stock = getProductStock(product.id);
   const available = isProductAvailable(product.id);
 
-  const handleQuickAdd = () => {
-    if (product.customizable) {
-      setShowModal(true);
-    } else {
-      addToCart(product, { quantity: 1 });
-    }
+    const handleQuickAdd = () => {
+    setShowModal(true);
   };
 
   const getCategoryColor = (category) => {

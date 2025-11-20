@@ -272,8 +272,23 @@ const ProductModal = ({ product, onClose }) => {
             </div>
           </div>
 
-          {/* Reviews (rating + comment) */}
-          <div className="space-y-3">
+          {/* Add to Cart Button */}
+          <button
+            onClick={handleAddToCart}
+            disabled={!isProductAvailable(product.id, quantity)}
+            className={`w-full py-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+              isProductAvailable(product.id, quantity)
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <ShoppingCart className="w-5 h-5" />
+            Add to Cart
+          </button>
+
+          {/* ========================= */}
+          {/* Reviews Section MOVED BELOW ADD TO CART */}
+          <div className="space-y-3 mt-6">
             <h3 className="font-semibold text-gray-900">Leave a review</h3>
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-600">Rating</label>
@@ -311,47 +326,35 @@ const ProductModal = ({ product, onClose }) => {
                 Reset
               </button>
             </div>
-          </div>
 
-          {/* Add to Cart Button */}
-          <button
-            onClick={handleAddToCart}
-            disabled={!isProductAvailable(product.id, quantity)}
-            className={`w-full py-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
-              isProductAvailable(product.id, quantity)
-                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            <ShoppingCart className="w-5 h-5" />
-            Add to Cart
-          </button>
-
-          {/* Reviews List */}
-          {reviews.length > 0 && (
-            <div className="mt-8 space-y-4">
-              <h3 className="font-semibold text-gray-900">Customer Reviews ({reviews.length})</h3>
-              <div className="space-y-4">
-                {reviews.map(review => (
-                  <div key={review.id} className="bg-gray-50 p-4 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{review.name}</span>
-                        <span className="text-amber-500">{'★'.repeat(review.rating)}</span>
-                        <span className="text-gray-400">{'☆'.repeat(5 - review.rating)}</span>
+            {/* Reviews List */}
+            {reviews.length > 0 && (
+              <div className="mt-4 space-y-4">
+                <h3 className="font-semibold text-gray-900">Customer Reviews ({reviews.length})</h3>
+                <div className="space-y-4">
+                  {reviews.map(review => (
+                    <div key={review.id} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{review.name}</span>
+                          <span className="text-amber-500">{'★'.repeat(review.rating)}</span>
+                          <span className="text-gray-400">{'☆'.repeat(5 - review.rating)}</span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {new Date(review.createdAt).toLocaleDateString()}
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {new Date(review.createdAt).toLocaleDateString()}
-                      </span>
+                      {review.comment && (
+                        <p className="text-gray-600 text-sm">{review.comment}</p>
+                      )}
                     </div>
-                    {review.comment && (
-                      <p className="text-gray-600 text-sm">{review.comment}</p>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+          {/* ========================= */}
+
         </div>
       </div>
     </div>

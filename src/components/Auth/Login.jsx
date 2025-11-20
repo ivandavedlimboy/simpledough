@@ -6,8 +6,7 @@ import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 const Login = () => {
   const [formData, setFormData] = useState({
     email: '',
-    password: '',
-    role: 'customer'
+    password: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -19,21 +18,16 @@ const Login = () => {
     setError('');
 
     try {
-      // ✅ Use the AuthContext login function
+      // ✅ Use AuthContext login function
       login({
         email: formData.email,
-        password: formData.password,
+        password: formData.password
       });
 
-      // ✅ Redirect based on user role (stored in localStorage)
-      const user = JSON.parse(localStorage.getItem('simple-dough-user'));
-      if (user) {
-        navigate(user.role === 'admin' ? '/admin' : '/menu');
-      } else {
-        setError('Invalid login or missing user data.');
-      }
+      // ✅ Only customer frontend, redirect to /menu
+      navigate('/menu');
+
     } catch (err) {
-      // ✅ Catch AuthContext errors (like "Invalid email or password")
       setError(err.message || 'Login failed. Please try again.');
     }
   };
@@ -50,7 +44,8 @@ const Login = () => {
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-8">
-          {/* ✅ Error message display */}
+
+          {/* Error message display */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-4">
               {error}
@@ -58,6 +53,8 @@ const Login = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email Address
@@ -75,6 +72,7 @@ const Login = () => {
               </div>
             </div>
 
+            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password
@@ -99,6 +97,7 @@ const Login = () => {
               </div>
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
               className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white py-3 rounded-lg font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-200 transform hover:scale-105"

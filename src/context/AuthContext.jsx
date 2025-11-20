@@ -112,6 +112,12 @@ export const AuthProvider = ({ children }) => {
     setUser(updatedUser);
   };
 
+  // ✅ Verify current password before allowing email/password changes
+  const verifyCurrentPassword = (currentPassword) => {
+    if (!user) throw new Error('No user logged in');
+    return user.password === currentPassword;
+  };
+
   const value = {
     user,
     login,
@@ -123,6 +129,7 @@ export const AuthProvider = ({ children }) => {
     addOrder, // ✅ expose function to add order
     isAdmin: user?.role === 'admin',
     isCustomer: user?.role === 'customer',
+    verifyCurrentPassword, // ✅ added for current password verification
   };
 
   return (

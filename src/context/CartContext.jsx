@@ -15,6 +15,20 @@ export const CartProvider = ({ children }) => {
   const { user } = useAuth(); // ✅ Get the logged-in user
   const [cartItems, setCartItems] = useState([]);
 
+  // Helper to map cart items for order insertion
+  const getCartDataForOrder = () => {
+    const mappedData = cartItems.map(item => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+      total_price: item.totalPrice,
+      customizations: item.customizations
+    }));
+
+    console.log("Mapped cart data for Supabase:", mappedData); // <-- add this line
+
+    return mappedData;
+  };
+
   // Helper: get key based on user
   const getStorageKey = () => {
     return user?.email
@@ -38,13 +52,17 @@ export const CartProvider = ({ children }) => {
   }, [cartItems, user]);
 
   const addToCart = (product, customizations = {}) => {
-    const cartItem = {
-      id: Date.now().toString(),
-      productId: product.id,
-      product,
-      quantity: customizations.quantity || 1,
-      customizations,
-      totalPrice: product.price * (customizations.quantity || 1)
+   const cartItem = {
+      id: Date.now().toString(),        // Unique ID for cart item
+      productId: product.id,            // Reference to product table
+      product,                          // Store full product info for display
+      quantity: customizations.quantity && customizations.quantity > 0 ? customizations.quantity : 1, // Ensure quantity >=1
+      customizations: {
+        ...customizations,
+        flavors: customizations.flavors || [],      
+        toppings: customizations.toppings || {}
+      },
+      totalPrice: product.price * (customizations.quantity && customizations.quantity > 0 ? customizations.quantity : 1) // Calculate total price
     };
 
     setCartItems(prev => [...prev, cartItem]);
@@ -69,6 +87,7 @@ export const CartProvider = ({ children }) => {
 
   const clearCart = () => {
     setCartItems([]);
+    localStorage.removeItem(getStorageKey());
   };
 
   const getTotalPrice = () => {
@@ -86,7 +105,8 @@ export const CartProvider = ({ children }) => {
     updateQuantity,
     clearCart,
     getTotalPrice,
-    getTotalItems
+    getTotalItems,
+    getCartDataForOrder, 
   };
 
   return (

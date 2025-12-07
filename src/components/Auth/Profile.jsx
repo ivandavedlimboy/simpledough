@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
+import { supabase } from '../../lib/supabaseClient'; // adjust path if needed
+
 const Profile = () => {
   const { user, updateProfile, verifyCurrentPassword } = useAuth();
 
@@ -36,9 +38,7 @@ const Profile = () => {
     );
 
   // Creates masked password equal to length of existing password
-  const maskedPassword = user.password
-    ? '*'.repeat(user.password.length)
-    : '******';
+  const maskedPassword = '******'; // placeholder, cannot access real password
 
   const handleVerifyCurrentPassword = async () => {
     setAuthError('');

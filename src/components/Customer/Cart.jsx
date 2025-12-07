@@ -7,7 +7,7 @@ import { useInventory } from '../../context/InventoryContext';
 import CheckoutModal from './CheckoutModal';
 
 const Cart = () => {
-  const { cartItems, removeFromCart, updateQuantity, getTotalPrice, getTotalItems } = useCart();
+  const { cartItems, removeFromCart, updateQuantity,  clearCart, getTotalPrice, getTotalItems } = useCart();
   const { inventory, getProductStock } = useInventory();
   const { user } = useAuth();
   const [showCheckout, setShowCheckout] = useState(false);
@@ -102,7 +102,7 @@ const Cart = () => {
                   )}
 
                   <p className="text-amber-600 font-semibold text-lg">
-                    ₱{item.product.price} × {item.quantity} = ₱{item.totalPrice}
+                    ₱{item.product.price} × {item.quantity} = ₱{item.product.price * item.quantity}
                   </p>
                 </div>
 
@@ -141,20 +141,18 @@ const Cart = () => {
           <div className="bg-white rounded-xl shadow-lg p-6 sticky top-4">
             <h3 className="text-xl font-bold text-gray-900 mb-6">Order Summary</h3>
             
-            <div className="space-y-3 mb-6">
-              <div className="flex justify-between">
-                <span>Subtotal ({getTotalItems()} items)</span>
-                <span>₱{getTotalPrice()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Delivery Fee</span>
-                <span>₱50</span>
-              </div>
-              <div className="border-t pt-3">
-                <div className="flex justify-between text-lg font-bold">
-                  <span>Total</span>
-                  <span className="text-amber-600">₱{getTotalPrice() + 50}</span>
-                </div>
+            <div className="flex justify-between">
+              <span>Subtotal ({getTotalItems()} items)</span>
+              <span>₱{getTotalPrice()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Delivery Fee</span>
+              <span>₱50</span>
+            </div>
+            <div className="border-t pt-3">
+              <div className="flex justify-between text-lg font-bold">
+                <span>Total</span>
+                <span className="text-amber-600">₱{getTotalPrice() + 50}</span>
               </div>
             </div>
 
@@ -164,6 +162,15 @@ const Cart = () => {
             >
               Proceed to Checkout
             </button>
+
+            {showCheckout && (
+              <CheckoutModal
+                onClose={() => setShowCheckout(false)}
+                cartItems={cartItems}        // ✅ Pass cart items
+                user={user}                  // ✅ Pass logged-in user info
+                clearCart={() => clearCart()} // ✅ Optional, if CartContext has clearCart()
+              />
+            )}
 
             <Link
               to="/menu"
@@ -177,7 +184,12 @@ const Cart = () => {
 
       {/* Checkout Modal */}
       {showCheckout && (
-        <CheckoutModal onClose={() => setShowCheckout(false)} />
+        <CheckoutModal
+          onClose={() => setShowCheckout(false)}
+          cartItems={cartItems}
+          user={user}
+          clearCart={() => clearCart()}
+        />
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { X, Plus, Minus, ShoppingCart } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabaseClient';
 
 const ProductModal = ({ product, onClose }) => {
   const [quantity, setQuantity] = useState(1);
@@ -38,33 +39,32 @@ const ProductModal = ({ product, onClose }) => {
     }
   };
 
-  const handleAddToCart = () => {
-    if (!isProductAvailable(product.id, quantity)) {
-      alert('Not enough stock available');
-      return;
-    }
+    const handleAddToCart = () => {
+      if (!isProductAvailable(product.id, quantity)) {
+        alert('Not enough stock available');
+        return;
+      }
 
-    const customizations = {
+      // Validate selections
+      if (product.customizable) {
+        if (product.flavors && selectedFlavors.length === 0) {
+          alert('Please select at least one flavor');
+          return;
+        }
+        if (product.toppings && (!selectedToppings.classic || !selectedToppings.premium)) {
+          alert('Please select both classic and premium toppings');
+          return;
+        }
+      }
+
+    addToCart(product, {
       quantity,
       flavors: selectedFlavors,
-      toppings: selectedToppings
+      toppings: selectedToppings // keep as object { classic: '', premium: '' }
+    });
+
+      onClose(); // close modal after adding
     };
-
-    // Validate customizations
-    if (product.customizable) {
-      if (product.flavors && selectedFlavors.length === 0) {
-        alert('Please select at least one flavor');
-        return;
-      }
-      if (product.toppings && (!selectedToppings.classic || !selectedToppings.premium)) {
-        alert('Please select both classic and premium toppings');
-        return;
-      }
-    }
-
-    addToCart(product, customizations);
-    onClose();
-  };
 
   // Reviews: save locally to localStorage under 'simple-dough-reviews'
   const [rating, setRating] = useState(5);

@@ -176,10 +176,10 @@ const Dashboard = () => {
                         >
                           <div>
                             <p className="font-semibold text-gray-900">
-                              Order #{order.id.slice(-6)}
+                              Order #{order?.id?.slice(-6) || "000000"}
                             </p>
                             <p className="text-sm text-gray-600">
-                              {order.items.length} items • {order.paymentMethod.toUpperCase()}
+                              {(order.items?.length || 0)} items • {(order.paymentMethod || "unknown").toUpperCase()}
                             </p>
                             <p className="text-xs text-gray-500">
                               {new Date(order.createdAt).toLocaleDateString()}
@@ -190,7 +190,7 @@ const Dashboard = () => {
                             <span
                               className={`px-2 py-1 text-xs rounded-full border ${getStatusColor(order.status)}`}
                             >
-                              {order.status}
+                              {order?.status || "pending"}
                             </span>
                           </div>
                         </div>

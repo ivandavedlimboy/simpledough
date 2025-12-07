@@ -1,85 +1,52 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { useInventory } from "../../context/InventoryContext";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Package, Calendar, XCircle } from "lucide-react";
+import { ArrowLeft, Package, Calendar } from "lucide-react"; // removed XCircle
+
+// Helper to convert UTC to Philippine Time (UTC+8)
+const toPHT = (utcDate) => {
+  const date = new Date(utcDate);
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000); // add 8 hours
+};
 
 const OrderHistory = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
-
-  const { revertStock } = useInventory();
-
-  const getUserCancelKey = () => {
-    return user?.email ? `simple-dough-orders-${user.email}` : "simple-dough-orders-guest";
-  };
-
-  const fetchOrders = () => {
-    if (!user) return;
-
-    const globalOrders = JSON.parse(localStorage.getItem("simple-dough-orders") || "[]");
-    const cancelledByUser = JSON.parse(localStorage.getItem(getUserCancelKey()) || "[]");
-
-    // Filter by current user and exclude cancelled orders
-    const userOrders = globalOrders.filter(
-      (o) => o.customerEmail === user.email && !cancelledByUser.includes(o.id)
-    );
-
-    // Tag orders cancelled by admin
-    userOrders.forEach(o => {
-      if (o.status === 'cancelled' && !cancelledByUser.includes(o.id)) {
-        o.cancelledBy = 'admin';
-      }
-    });
-
-    // Separate active vs completed/admin-cancelled orders
-    const activeOrders = userOrders.filter(o => o.status !== "delivered" && o.cancelledBy !== "admin");
-    const completedOrders = userOrders.filter(
-      o => o.status === "delivered" || o.cancelledBy === "admin"
-    );
-
-    // Sort each section by newest first
-    const sortedActive = activeOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    // Newest first for delivered/admin-cancelled orders
-    const sortedCompleted = completedOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    // Combine lists (active first, then completed)
-    setOrders([...sortedActive, ...sortedCompleted]);
-  };
+  const { fetchOrders } = useAuth(); // use Supabase fetchOrders
 
   useEffect(() => {
-    fetchOrders();
+    const loadOrders = async () => {
+      if (user) {
+        const data = await fetchOrders(user.id);
 
-    const handleStorageChange = (e) => {
-      if (e.key === "simple-dough-orders" || e.key === getUserCancelKey()) {
-        fetchOrders();
+        const mappedOrders = data.map(order => ({
+          id: order.id,
+          createdAt: order.created_at,
+          status: order.status,
+          // removed cancelledBy mapping (schema doesn't have cancelled_by)
+          total: order.total_amount,
+          items: (order.order_items || []).map(item => ({
+            id: item.id,
+            quantity: item.quantity,
+            totalPrice: item.price,
+            product: {
+              name: item.products?.name,
+              image: item.products?.image_url
+            },
+            customizations: {
+              flavors: item.flavors || [],
+              toppings: item.toppings || {}
+            }
+          }))
+        }));
+
+        setOrders(mappedOrders);
       }
     };
 
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [user]);
-
-  const cancelOrder = (orderId) => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) return;
-
-    const cancelledByUser = JSON.parse(localStorage.getItem(getUserCancelKey()) || "[]");
-    cancelledByUser.push(orderId);
-    localStorage.setItem(getUserCancelKey(), JSON.stringify(cancelledByUser));
-
-    const globalOrders = JSON.parse(localStorage.getItem("simple-dough-orders") || "[]");
-    const index = globalOrders.findIndex((o) => o.id === orderId);
-    if (index !== -1) {
-      globalOrders[index].status = "cancelled";
-      localStorage.setItem("simple-dough-orders", JSON.stringify(globalOrders));
-      
-      const order = globalOrders[index];
-      order.items.forEach(item => revertStock(item.product.id, item.quantity));
-    }
-
-    fetchOrders();
-  };
+    loadOrders();
+  }, [user, fetchOrders]);
 
   if (!user) {
     return (
@@ -115,10 +82,10 @@ const OrderHistory = () => {
     );
   }
 
-  // Find where the first completed order starts
+  // Find where the first completed order starts (delivered OR cancelled)
   const firstCompletedIndex = orders.findIndex(
-  o => o.status === "delivered" || o.cancelledBy === "admin"
-);
+    o => o.status === "delivered" || o.status === "cancelled"
+  );
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -151,8 +118,8 @@ const OrderHistory = () => {
                 </div>
                 <div className="text-gray-500 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  {new Date(order.createdAt).toLocaleDateString()}{" "}
-                  {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {toPHT(order.createdAt).toLocaleDateString()}{" "}
+                  {toPHT(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
 
@@ -223,17 +190,8 @@ const OrderHistory = () => {
                     order.status === 'delivered' ? 'bg-green-200 text-green-800' :
                     'bg-gray-100 text-gray-700'
                   }`}>
-                    {order.cancelledBy === 'admin' ? 'Cancelled by SimpleDough' : order.status.toUpperCase()}
+                    {order.status.toUpperCase()}
                   </span>
-
-                  {order.status === 'pending' && (
-                    <button
-                      onClick={() => cancelOrder(order.id)}
-                      className="flex items-center gap-1 bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-medium hover:bg-red-200 transition-all"
-                    >
-                      <XCircle className="w-4 h-4" /> Cancel
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

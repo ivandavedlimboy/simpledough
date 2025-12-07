@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient'; // add this line
 
 const AuthContext = createContext();
 
@@ -13,109 +14,246 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [orderHistory, setOrderHistory] = useState([]); // ✅ Added order history state
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('simple-dough-user');
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
+    const loadUser = async () => {
+      setLoading(true);
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Failed to get Supabase session:', error.message);
+        setLoading(false);
+        return;
+      }
 
-      // ✅ Load this user's order history
-      const allOrders = JSON.parse(localStorage.getItem('simple-dough-orders')) || [];
-      const userOrders = allOrders.filter((order) => order.userId === parsedUser.id);
-      setOrderHistory(userOrders);
-    }
-    setLoading(false);
+      if (session?.user) {
+        // Map Supabase user metadata to match your previous structure
+        const fullUser = {
+          ...session.user,
+          name: session.user.user_metadata?.name || session.user.raw_user_meta_data?.name,
+          role: session.user.user_metadata?.role || session.user.raw_user_meta_data?.role || 'customer',
+          phone: session.user.user_metadata?.phone || session.user.raw_user_meta_data?.phone,
+          address: session.user.user_metadata?.address || session.user.raw_user_meta_data?.address,
+        };
+
+        setUser(fullUser);
+      }
+      setLoading(false);
+    };
+
+    loadUser();
   }, []);
 
   // ✅ Register a new user
-  const register = (userData) => {
-    const users = JSON.parse(localStorage.getItem('simple-dough-users')) || [];
+ // ✅ AuthContext register function
+  const register = async ({ name, email, phone, address, password }) => {
+    try {
+      // 1️⃣ Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          // optional: you can store some metadata
+          data: { name, phone, address, role: 'customer' },
+        },
+      });
 
-    // Check if email already exists
-    if (users.some((u) => u.email === userData.email)) {
-      throw new Error('Email already registered');
+      if (authError) throw new Error(authError.message);
+
+      const userId = authData.user?.id;
+      if (!userId) throw new Error('User registration incomplete. Please confirm your email.');
+
+      // 2️⃣ Insert into customers table
+      const { error: customerError } = await supabase
+        .from('customers')
+        .insert([
+          {
+            user_id: userId,
+            full_name: name,
+            phone,
+            address,
+          },
+        ]);
+
+      if (customerError) throw new Error(customerError.message);
+
+      // 3️⃣ Set local state
+      setUser(authData.user);
+
+      return authData.user;
+    } catch (error) {
+      throw error;
     }
-
-    const newUser = {
-      ...userData,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    localStorage.setItem('simple-dough-users', JSON.stringify(users));
-    localStorage.setItem('simple-dough-user', JSON.stringify(newUser));
-    setUser(newUser);
-
-    return newUser;
   };
 
   // ✅ Login existing user
-  const login = ({ email, password }) => {
-    const users = JSON.parse(localStorage.getItem('simple-dough-users')) || [];
-    const foundUser = users.find(
-      (u) => u.email === email && u.password === password
-    );
+  const login = async ({ email, password }) => {
+    // 1️⃣ Login attempt
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
 
-    if (!foundUser) {
-      throw new Error('Invalid email or password');
-    }
+    if (error) throw error;
 
-    setUser(foundUser);
-    localStorage.setItem('simple-dough-user', JSON.stringify(foundUser));
+    // 2️⃣ Get the *full* user object after login (VERY IMPORTANT)
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
 
-    // ✅ Load order history for this user
-    const allOrders = JSON.parse(localStorage.getItem('simple-dough-orders')) || [];
-    const userOrders = allOrders.filter((order) => order.userId === foundUser.id);
-    setOrderHistory(userOrders);
-  };
+    const u = userData.user;
 
-  const logout = () => {
-    setUser(null);
-    setOrderHistory([]); // ✅ Clear order history when logging out
-    localStorage.removeItem('simple-dough-user');
-    localStorage.removeItem('simple-dough-cart');
-  };
-
-  // ✅ Save new order for this user
-  const addOrder = (orderData) => {
-    if (!user) throw new Error('You must be logged in to place an order.');
-
-    const allOrders = JSON.parse(localStorage.getItem('simple-dough-orders')) || [];
-    const newOrder = {
-      ...orderData,
-      id: Date.now().toString(),
-      userId: user.id,
-      email: user.email,
-      createdAt: new Date().toISOString(),
+    // 3️⃣ Build user with complete metadata
+    const fullUser = {
+      ...u,
+      name: u.user_metadata?.name || u.raw_user_meta_data?.name,
+      role: u.user_metadata?.role || u.raw_user_meta_data?.role || 'customer',
+      phone: u.user_metadata?.phone || u.raw_user_meta_data?.phone,
+      address: u.user_metadata?.address || u.raw_user_meta_data?.address,
     };
 
-    allOrders.push(newOrder);
-    localStorage.setItem('simple-dough-orders', JSON.stringify(allOrders));
+    // 4️⃣ Save user
+    setUser(fullUser);
+  };
 
-    // Update local state
-    setOrderHistory((prev) => [...prev, newOrder]);
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    // setOrderHistory is not defined here, remove it
   };
 
   // ✅ Update the currently logged in user's profile
-  const updateProfile = (updates) => {
-    if (!user) throw new Error('No user logged in');
+  const updateProfile = async (updates) => {
+    if (!user) throw new Error("No user logged in");
 
-    const users = JSON.parse(localStorage.getItem('simple-dough-users')) || [];
-    const updatedUser = { ...user, ...updates, updatedAt: new Date().toISOString() };
+    const authPayload = {};
 
-    const newUsers = users.map((u) => (u.id === updatedUser.id ? updatedUser : u));
-    localStorage.setItem('simple-dough-users', JSON.stringify(newUsers));
-    localStorage.setItem('simple-dough-user', JSON.stringify(updatedUser));
-    setUser(updatedUser);
+    // Only send changed fields
+    if (updates.email) authPayload.email = updates.email;
+    if (updates.password) authPayload.password = updates.password;
+
+    // Attach metadata
+    authPayload.data = {
+      name: updates.name,
+      phone: updates.phone,
+      address: updates.address,
+    };
+
+    // 1️⃣ Update Supabase Auth (metadata, email, password)
+    const { data, error } = await supabase.auth.updateUser(authPayload);
+    if (error) throw error;
+
+    // 2️⃣ Find customer_id in customers table
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("customer_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (customerError) throw customerError;
+
+    // 3️⃣ Update customers table
+    const { error: updateCustomerError } = await supabase
+      .from("customers")
+      .update({
+        full_name: updates.name,
+        phone: updates.phone,
+        address: updates.address,
+      })
+      .eq("customer_id", customer.customer_id);
+
+    if (updateCustomerError) throw updateCustomerError;
+
+    // 4️⃣ Update local state
+    setUser({
+      ...data.user,
+      name: updates.name,
+      phone: updates.phone,
+      address: updates.address,
+    });
   };
 
   // ✅ Verify current password before allowing email/password changes
-  const verifyCurrentPassword = (currentPassword) => {
-    if (!user) throw new Error('No user logged in');
-    return user.password === currentPassword;
+  const verifyCurrentPassword = async (currentPassword) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  };
+
+  // ✅ Fetch this user's order history from Supabase
+const fetchOrders = async () => {
+  if (!user) return [];
+
+  // 1️⃣ Get the customer's Supabase 'customer_id' (same as checkout uses)
+  const { data: customer, error: customerError } = await supabase
+    .from('customers')
+    .select('customer_id')
+    .eq('user_id', user.id)
+    .single();
+
+  if (customerError) {
+    console.error('Error fetching customer:', customerError);
+    return [];
+  }
+
+  const customerId = customer.customer_id;
+
+    // 2️⃣ Fetch orders using the customer_id
+    const { data, error } = await supabase
+      .from("orders")
+      .select(`
+        id,
+        customer_id,
+        total_amount,
+        payment_method,
+        delivery_method,
+        status,
+        created_at,
+        order_items (
+          id,
+          product_id,
+          quantity,
+          price,
+          flavors,
+          toppings,
+          products (
+            id,
+            name,
+             image_url
+          )
+        )
+      `)
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching orders:", error);
+      return [];
+    }
+
+        // ⚡ Map the orders to your frontend-friendly structure
+    const mappedOrders = data.map(order => ({
+      ...order,
+      items: order.order_items.map(item => ({
+        id: item.id,
+        quantity: item.quantity,
+        totalPrice: item.price,
+        product: {
+          name: item.products.name,
+          image: item.products.image_url
+        },
+        customizations: {
+          flavors: item.flavors || [],
+          toppings: item.toppings || {}
+        }
+      }))
+    }));
+
+    return mappedOrders;
   };
 
   const value = {
@@ -125,11 +263,10 @@ export const AuthProvider = ({ children }) => {
     register,
     updateProfile,
     loading,
-    orderHistory, // ✅ expose order history
-    addOrder, // ✅ expose function to add order
     isAdmin: user?.role === 'admin',
     isCustomer: user?.role === 'customer',
     verifyCurrentPassword, // ✅ added for current password verification
+    fetchOrders,
   };
 
   return (

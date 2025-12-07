@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Eye, EyeOff, Lock, Mail, User, Phone, MapPin } from 'lucide-react';
 
+import { supabase } from '../../lib/supabaseClient'; // ← adjust the path if needed
+
 const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
@@ -22,7 +24,7 @@ const Register = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -46,12 +48,14 @@ const Register = () => {
         phone: formData.phone,
         address: formData.address,
         password: formData.password,
-        role: "customer"   // 🔐 HARD-CODED FOR SAFETY
+        role: "customer" // 🔐 HARD-CODED FOR SAFETY
       };
 
-      register(userData);
+      // ⚡ Call register function from AuthContext and await response
+      await register(userData);
+
       setSuccess('Registered successfully!');
-      navigate('/menu');   // always route to customer menu
+      navigate('/menu'); // always route to customer menu
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     }

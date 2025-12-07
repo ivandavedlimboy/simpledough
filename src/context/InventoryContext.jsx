@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { PRODUCTS } from '../data/products';
+import { supabase } from '../lib/supabaseClient';
 
 const InventoryContext = createContext();
 
@@ -80,6 +81,54 @@ export const InventoryProvider = ({ children }) => {
   });
 };
 
+const updateInventoryInSupabase = async (productId, newStock) => {
+  const { data, error } = await supabase
+    .from('inventory')
+    .update({ stock_quantity: newStock, updated_at: new Date() })
+    .eq('product_id', productId);
+
+  if (error) {
+    console.error('Failed to update inventory in Supabase:', error.message);
+  }
+
+  return data;
+};
+
+const incrementStock = (productId, amount = 10) => {
+  setInventory(prev => {
+    const current = prev[productId]?.currentStock || 0;
+    const limit = prev[productId]?.dailyLimit || 0;
+    const newStock = Math.min(current + amount, limit);
+
+    updateInventoryInSupabase(productId, newStock);
+
+    return {
+      ...prev,
+      [productId]: {
+        ...prev[productId],
+        currentStock: newStock
+      }
+    };
+  });
+};
+
+const decrementStock = (productId, amount = 10) => {
+  setInventory(prev => {
+    const current = prev[productId]?.currentStock || 0;
+    const newStock = Math.max(current - amount, 0);
+
+    updateInventoryInSupabase(productId, newStock);
+
+    return {
+      ...prev,
+      [productId]: {
+        ...prev[productId],
+        currentStock: newStock
+      }
+    };
+  });
+};
+
   const resetDailyInventory = () => {
     setInventory(prev => {
       const newInventory = {};
@@ -117,7 +166,9 @@ export const InventoryProvider = ({ children }) => {
     resetDailyInventory,
     getProductStock,
     isProductAvailable,
-    getLowStockProducts
+    getLowStockProducts,
+    incrementStock,    // ✅ added
+    decrementStock     // ✅ added
   };
 
   return (

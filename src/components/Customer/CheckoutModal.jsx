@@ -4,12 +4,13 @@ import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useInventory } from '../../context/InventoryContext';
 import CheckoutSuccess from './CheckoutSuccess';
+import { supabase } from '../../lib/supabaseClient';
 
 const CheckoutModal = ({ onClose }) => {
   const { cartItems, getTotalPrice, clearCart } = useCart();
   const { user } = useAuth();
   const { recordSale, getProductStock } = useInventory();
-  
+
   const [orderData, setOrderData] = useState({
     paymentMethod: 'gcash',
     deliveryMethod: 'delivery',
@@ -17,7 +18,7 @@ const CheckoutModal = ({ onClose }) => {
     phone: user?.phone || '',
     notes: ''
   });
-  
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
 
@@ -27,8 +28,29 @@ const CheckoutModal = ({ onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsProcessing(true);
-
     try {
+      // ✅ Step 0: Ensure customer exists
+      let customerId;
+      const { data: existingCustomer, error: fetchError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError; // PGRST116 = no rows
+
+      if (existingCustomer) {
+        customerId = existingCustomer.customer_id;
+      } else {
+        const { data: newCustomer, error: insertError } = await supabase
+          .from('customers')
+          .insert([{ user_id: user.id, full_name: user.name || user.email }])
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        customerId = newCustomer.customer_id;
+      }
+
       // 1️⃣ Aggregate same product quantities
       const aggregated = cartItems.reduce((acc, item) => {
         const id = item.product.id;
@@ -61,8 +83,8 @@ const CheckoutModal = ({ onClose }) => {
 
       // 5️⃣ Create order object
       const order = {
-        id: Date.now().toString(),
-        items: cartItems,
+        id: "ORD-" + Date.now().toString(),
+        items: Object.values(aggregated),
         total,
         ...orderData,
         status: 'pending',
@@ -72,16 +94,50 @@ const CheckoutModal = ({ onClose }) => {
         customerName: user.name || user.displayName || ''
       };
 
-      // 6️⃣ Save order globally
-      const existingGlobalOrders = JSON.parse(localStorage.getItem('simple-dough-orders') || '[]');
-      existingGlobalOrders.push(order);
-      localStorage.setItem('simple-dough-orders', JSON.stringify(existingGlobalOrders));
+      // 6️⃣ Insert into orders table
+      const { data: orderDataSupabase, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          customer_id: customerId,
+          total_amount: total,
+          payment_method: orderData.paymentMethod,
+          delivery_method: orderData.deliveryMethod,
+          status: 'pending'
+        }])
+        .select()
+        .single();
 
-      // 7️⃣ Save order per user
-      const userKey = `simple-dough-orders-${user.email}`;
-      const existingUserOrders = JSON.parse(localStorage.getItem(userKey) || '[]');
-      existingUserOrders.push(order);
-      localStorage.setItem(userKey, JSON.stringify(existingUserOrders));
+      // 6.5️⃣ Fetch product UUIDs
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id, code'); // assuming "code" matches your frontend product.id
+      if (productsError) throw productsError;
+
+      // Build a mapping: code -> UUID
+      const productMap = Object.fromEntries(products.map(p => [p.code, p.id]));
+
+      // 7️⃣ Inspect cart items before inserting
+      console.log('Cart items being sent to Supabase:', cartItems);
+
+      if (orderError) throw orderError;
+
+      // 7️⃣ Insert into order_items table
+      const orderItemsToInsert = cartItems.map(item => ({
+        order_id: orderDataSupabase.id,
+        product_id: productMap[item.product.id],
+        quantity: item.quantity,
+        price: item.product.price,
+        flavors: item.customizations.flavors || [],      // keep as array
+        toppings: item.customizations.toppings || {}     // keep as object { classic, premium }
+      }));
+
+      console.log('Final order_items data:', orderItemsToInsert);
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItemsToInsert);
+
+      if (itemsError) throw itemsError;
 
       // 8️⃣ Clear cart
       clearCart();
@@ -89,7 +145,8 @@ const CheckoutModal = ({ onClose }) => {
       // 9️⃣ Show success modal
       setOrderSuccess(order);
     } catch (error) {
-      alert('Failed to process order. Please try again.');
+      console.error('Supabase error:', error);
+      alert(`Failed to process order: ${error.message || error}`);
     } finally {
       setIsProcessing(false);
     }
@@ -121,7 +178,7 @@ const CheckoutModal = ({ onClose }) => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setOrderData({...orderData, paymentMethod: 'gcash'})}
+                onClick={() => setOrderData({ ...orderData, paymentMethod: 'gcash' })}
                 className={`p-4 border-2 rounded-lg flex items-center gap-3 transition-all ${
                   orderData.paymentMethod === 'gcash'
                     ? 'border-blue-500 bg-blue-50'
@@ -134,10 +191,10 @@ const CheckoutModal = ({ onClose }) => {
                   <div className="text-sm text-gray-600">Pay with GCash</div>
                 </div>
               </button>
-              
+
               <button
                 type="button"
-                onClick={() => setOrderData({...orderData, paymentMethod: 'cod'})}
+                onClick={() => setOrderData({ ...orderData, paymentMethod: 'cod' })}
                 className={`p-4 border-2 rounded-lg flex items-center gap-3 transition-all ${
                   orderData.paymentMethod === 'cod'
                     ? 'border-green-500 bg-green-50'
@@ -159,7 +216,7 @@ const CheckoutModal = ({ onClose }) => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setOrderData({...orderData, deliveryMethod: 'delivery'})}
+                onClick={() => setOrderData({ ...orderData, deliveryMethod: 'delivery' })}
                 className={`p-4 border-2 rounded-lg flex items-center gap-3 transition-all ${
                   orderData.deliveryMethod === 'delivery'
                     ? 'border-amber-500 bg-amber-50'
@@ -172,10 +229,10 @@ const CheckoutModal = ({ onClose }) => {
                   <div className="text-sm text-gray-600">₱50 delivery fee</div>
                 </div>
               </button>
-              
+
               <button
                 type="button"
-                onClick={() => setOrderData({...orderData, deliveryMethod: 'pickup'})}
+                onClick={() => setOrderData({ ...orderData, deliveryMethod: 'pickup' })}
                 className={`p-4 border-2 rounded-lg flex items-center gap-3 transition-all ${
                   orderData.deliveryMethod === 'pickup'
                     ? 'border-purple-500 bg-purple-50'
@@ -203,7 +260,9 @@ const CheckoutModal = ({ onClose }) => {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 placeholder="Enter your full delivery address..."
                 value={orderData.deliveryAddress}
-                onChange={(e) => setOrderData({...orderData, deliveryAddress: e.target.value})}
+                onChange={(e) =>
+                  setOrderData({ ...orderData, deliveryAddress: e.target.value })
+                }
               />
             </div>
           )}
@@ -219,7 +278,7 @@ const CheckoutModal = ({ onClose }) => {
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
               placeholder="Enter your phone number"
               value={orderData.phone}
-              onChange={(e) => setOrderData({...orderData, phone: e.target.value})}
+              onChange={(e) => setOrderData({ ...orderData, phone: e.target.value })}
             />
           </div>
 
@@ -233,7 +292,7 @@ const CheckoutModal = ({ onClose }) => {
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
               placeholder="Any special instructions for your order..."
               value={orderData.notes}
-              onChange={(e) => setOrderData({...orderData, notes: e.target.value})}
+              onChange={(e) => setOrderData({ ...orderData, notes: e.target.value })}
             />
           </div>
 

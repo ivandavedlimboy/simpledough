@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
+import { supabase } from '../../lib/supabaseClient'; // adjust the path if needed
+
 const Login = () => {
   const [formData, setFormData] = useState({
     email: '',
@@ -13,18 +15,18 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     try {
-      // ✅ Use AuthContext login function
-      login({
+      // ⚡ Call login function from AuthContext and await response
+      await login({
         email: formData.email,
         password: formData.password
       });
 
-      // ✅ Only customer frontend, redirect to /menu
+      // ✅ Navigate after successful login
       navigate('/menu');
 
     } catch (err) {

@@ -6,22 +6,24 @@ const CheckoutSuccess = ({ order, onClose }) => {
   const [showConfetti, setShowConfetti] = useState(true);
 
   useEffect(() => {
-    // Hide confetti after animation
     const timer = setTimeout(() => setShowConfetti(false), 3000);
     return () => clearTimeout(timer);
   }, []);
 
+  // -----------------------------
+  // FIXED RECEIPT FUNCTION
+  // -----------------------------
   const downloadReceipt = () => {
     const receiptData = {
       orderNumber: order.id.slice(-8),
-      date: new Date(order.createdAt).toLocaleString(),
+      date: new Date(order.created_at).toLocaleString(),
       items: order.items,
-      total: order.total,
-      paymentMethod: order.paymentMethod,
-      deliveryMethod: order.deliveryMethod,
+      total_amount: order.total_amount,
+      payment_method: order.payment_method,
+      delivery_method: order.delivery_method,
       customerInfo: {
         phone: order.phone,
-        address: order.deliveryAddress
+        address: order.delivery_address
       }
     };
 
@@ -29,34 +31,12 @@ const CheckoutSuccess = ({ order, onClose }) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `simple-dough-receipt-${order.id.slice(-8)}.json`;
+    a.download = `receipt-${order.id.slice(-8)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-
-  // ✅ Save order globally (in case CheckoutSuccess is mounted independently)
-  useEffect(() => {
-    if (order) {
-      // Global orders
-      const existingGlobalOrders = JSON.parse(localStorage.getItem('simple-dough-orders') || '[]');
-      if (!existingGlobalOrders.find(o => o.id === order.id)) {
-        existingGlobalOrders.push(order);
-        localStorage.setItem('simple-dough-orders', JSON.stringify(existingGlobalOrders));
-      }
-
-      // User-specific orders
-      if (order.customerEmail) {
-        const userKey = `simple-dough-orders-${order.customerEmail}`;
-        const existingUserOrders = JSON.parse(localStorage.getItem(userKey) || '[]');
-        if (!existingUserOrders.find(o => o.id === order.id)) {
-          existingUserOrders.push(order);
-          localStorage.setItem(userKey, JSON.stringify(existingUserOrders));
-        }
-      }
-    }
-  }, [order]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -79,16 +59,15 @@ const CheckoutSuccess = ({ order, onClose }) => {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-height-[90vh] overflow-y-auto shadow-2xl">
         {/* Success Header */}
         <div className="bg-gradient-to-br from-green-500 to-emerald-600 text-white p-8 text-center rounded-t-2xl">
           <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
             <CheckCircle className="w-12 h-12" />
           </div>
           <h1 className="text-3xl font-bold mb-2">Order Confirmed! 🎉</h1>
-          <p className="text-green-100 text-lg">
-            Thank you for choosing Simple Dough!
-          </p>
+          <p className="text-green-100 text-lg">Thank you for choosing Simple Dough!</p>
+
           <div className="mt-4 bg-white bg-opacity-20 rounded-lg p-3 inline-block">
             <p className="text-sm">Order Number</p>
             <p className="text-2xl font-bold">#{order.id.slice(-8)}</p>
@@ -103,6 +82,7 @@ const CheckoutSuccess = ({ order, onClose }) => {
               <Clock className="w-5 h-5 text-amber-600" />
               Order Status
             </h3>
+
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
@@ -119,6 +99,7 @@ const CheckoutSuccess = ({ order, onClose }) => {
                 <span className="text-sm text-gray-500">Ready</span>
               </div>
             </div>
+
             <p className="text-sm text-amber-700 mt-3">
               We'll notify you when your delicious donuts are ready!
             </p>
@@ -127,20 +108,25 @@ const CheckoutSuccess = ({ order, onClose }) => {
           {/* Delivery Information */}
           <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              {order.deliveryMethod === 'delivery' ? <MapPin className="w-5 h-5 text-blue-600" /> : <Package className="w-5 h-5 text-blue-600" />}
-              {order.deliveryMethod === 'delivery' ? 'Delivery Details' : 'Pickup Details'}
+              {order.delivery_method === 'delivery'
+                ? <MapPin className="w-5 h-5 text-blue-600" />
+                : <Package className="w-5 h-5 text-blue-600" />
+              }
+              {order.delivery_method === 'delivery' ? 'Delivery Details' : 'Pickup Details'}
             </h3>
+
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Phone className="w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-700">{order.phone}</span>
               </div>
-              {order.deliveryMethod === 'delivery' ? (
+
+              {order.delivery_method === 'delivery' ? (
                 <div className="flex items-start gap-3">
                   <MapPin className="w-4 h-4 text-blue-600 mt-0.5" />
                   <div>
-                    <p className="text-sm text-gray-700">{order.deliveryAddress}</p>
-                    <p className="text-xs text-blue-600 mt-1">Estimated delivery: 30-45 minutes</p>
+                    <p className="text-sm text-gray-700">{order.delivery_address}</p>
+                    <p className="text-xs text-blue-600 mt-1">Estimated delivery: 30–45 minutes</p>
                   </div>
                 </div>
               ) : (
@@ -148,7 +134,7 @@ const CheckoutSuccess = ({ order, onClose }) => {
                   <Package className="w-4 h-4 text-blue-600 mt-0.5" />
                   <div>
                     <p className="text-sm text-gray-700">Simple Dough Store</p>
-                    <p className="text-xs text-blue-600 mt-1">Ready for pickup in 15-20 minutes</p>
+                    <p className="text-xs text-blue-600 mt-1">Ready for pickup in 15–20 minutes</p>
                   </div>
                 </div>
               )}
@@ -158,9 +144,10 @@ const CheckoutSuccess = ({ order, onClose }) => {
           {/* Order Summary */}
           <div className="bg-gray-50 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h3>
+
             <div className="space-y-3">
-              {order.items.map((item, index) => (
-                <div key={index} className="flex items-center gap-4 p-3 bg-white rounded-lg">
+              {order.items.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-4 p-3 bg-white rounded-lg">
                   <img
                     src={item.product.image}
                     alt={item.product.name}
@@ -168,7 +155,7 @@ const CheckoutSuccess = ({ order, onClose }) => {
                   />
                   <div className="flex-1">
                     <h4 className="font-medium text-gray-900">{item.product.name}</h4>
-                    {item.customizations.flavors && item.customizations.flavors.length > 0 && (
+                    {item.customizations.flavors?.length > 0 && (
                       <p className="text-xs text-gray-600">
                         Flavors: {item.customizations.flavors.join(', ')}
                       </p>
@@ -180,25 +167,30 @@ const CheckoutSuccess = ({ order, onClose }) => {
               ))}
             </div>
 
-            {/* Total */}
+            {/* Totals */}
             <div className="border-t mt-4 pt-4">
               <div className="flex justify-between items-center text-sm mb-2">
                 <span>Subtotal:</span>
-                <span>₱{order.total - (order.deliveryMethod === 'delivery' ? 50 : 0)}</span>
+                <span>
+                  ₱{order.total_amount - (order.delivery_method === 'delivery' ? 50 : 0)}
+                </span>
               </div>
-              {order.deliveryMethod === 'delivery' && (
+
+              {order.delivery_method === 'delivery' && (
                 <div className="flex justify-between items-center text-sm mb-2">
                   <span>Delivery Fee:</span>
                   <span>₱50</span>
                 </div>
               )}
+
               <div className="flex justify-between items-center text-lg font-bold text-amber-600">
                 <span>Total:</span>
-                <span>₱{order.total}</span>
+                <span>₱{order.total_amount}</span>
               </div>
+
               <div className="flex justify-between items-center text-sm text-gray-600 mt-1">
                 <span>Payment Method:</span>
-                <span>{order.paymentMethod.toUpperCase()}</span>
+                <span>{order.payment_method.toUpperCase()}</span>
               </div>
             </div>
           </div>
@@ -220,6 +212,7 @@ const CheckoutSuccess = ({ order, onClose }) => {
               <Download className="w-5 h-5" />
               Download Receipt
             </button>
+
             <Link
               to="/menu"
               className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-3 px-6 rounded-lg font-semibold hover:from-amber-600 hover:to-orange-600 transition-all transform hover:scale-105 flex items-center justify-center gap-2"
@@ -237,11 +230,11 @@ const CheckoutSuccess = ({ order, onClose }) => {
           </button>
         </div>
 
-        {/* Footer Message */}
+        {/* Footer */}
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-6 text-center rounded-b-2xl">
           <p className="text-sm">
-            🍩 Thank you for choosing Simple Dough! We're preparing your fresh donuts with love. 
-            Follow us on social media for updates and special offers!
+            🍩 Thank you for choosing Simple Dough! We're preparing your fresh donuts with love.
+            Follow us for updates and special offers!
           </p>
         </div>
       </div>

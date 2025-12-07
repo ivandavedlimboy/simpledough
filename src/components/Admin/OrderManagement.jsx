@@ -1,6 +1,12 @@
 import { useInventory } from '../../context/InventoryContext';
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Eye, CheckCircle, Clock, Truck, Mail, Package, Phone, MapPin, Calendar } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
+
+const toPHT = (utcDate) => {
+  const date = new Date(utcDate);
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000); // add 8 hours
+};
 
 const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
@@ -12,20 +18,185 @@ const OrderManagement = () => {
   const { revertStock } = useInventory();
 
   const revertMultipleItems = (items) => {
-    items.forEach(item => revertStock(item.product.id, item.quantity));
+    // ensure valid items before reverting
+    if (!Array.isArray(items)) return;
+    items.forEach(item => {
+      const pid = item?.product?.id;
+      const qty = Number(item?.quantity || 0);
+      if (pid && qty > 0) revertStock(pid, qty);
+    });
   };
 
+useEffect(() => {
+  const fetchOrders = async () => {
+    // Fetch orders with items & product info
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          * ,
+          products (id, name, image_url)
+        )
+      `)
+      .order('created_at', { ascending: false });
 
-  useEffect(() => {
-    // Load orders from localStorage
-    const savedOrders = JSON.parse(localStorage.getItem('simple-dough-orders') || '[]');
+    if (orderError) {
+      console.error('Error fetching orders:', orderError);
+      return;
+    }
+    if (!orderData) {
+      setOrders([]);
+      setFilteredOrders([]);
+      return;
+    }
 
-     // Sort by newest first
-  const sortedOrders = savedOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  
-  setOrders(sortedOrders);
-  setFilteredOrders(sortedOrders);
-  }, []);
+    // Collect customer_ids present on orders and fetch customers
+    const customerIds = Array.from(new Set(orderData.map(o => o.customer_id).filter(Boolean)));
+    let customersMap = {};
+    if (customerIds.length > 0) {
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select('*')
+        .in('customer_id', customerIds);
+      if (customersError) {
+        console.error('Error fetching customers:', customersError);
+      } else if (customersData) {
+        customersMap = Object.fromEntries(customersData.map(c => [c.customer_id, c]));
+      }
+    }
+
+    // Map orders and prefer customer table values when order columns are empty
+    const mappedOrders = orderData.map(order => {
+      const cust = customersMap[order.customer_id] || null;
+
+      return {
+        id: order.id,
+        createdAt: order.created_at,
+        updatedAt: order.updated_at, // <- include updatedAt for reconciliation
+        status: order.status,
+        // removed cancelledBy (schema does not contain cancelled_by)
+        total: order.total_amount,
+        // Prefer order-level fields but fallback to customer record
+        phone: order.phone || cust?.phone || '',
+        customerName: order.customer_name || cust?.full_name || '',
+        customerEmail: order.customer_email || '',
+        deliveryMethod: order.delivery_method,
+        deliveryAddress: order.delivery_address || cust?.address || '',
+        paymentMethod: order.payment_method,
+        notes: order.notes,
+        items: (order.order_items || []).map(item => ({
+          id: item.id,
+          quantity: item.quantity,
+          totalPrice: item.price,
+          product: {
+            id: item.products?.id,
+            name: item.products?.name,
+            image: item.products?.image_url
+          },
+          customizations: {
+            flavors: item.flavors || [],
+            toppings: item.toppings || {}
+          }
+        }))
+      };
+    });
+
+    setOrders(mappedOrders);
+    setFilteredOrders(mappedOrders);
+  };
+
+  fetchOrders();
+}, []);
+
+  const [loadingStatus, setLoadingStatus] = useState(null);
+
+  const handleStatusChange = async (orderId, newStatus) => {
+    if (!orderId || !newStatus) {
+      console.error('Invalid orderId or status');
+      return;
+    }
+
+    // snapshot for rollback
+    const prevOrders = [...orders];
+    const prevSelected = selectedOrder ? { ...selectedOrder } : null;
+
+    setLoadingStatus(orderId);
+
+    try {
+      // Optimistic UI update (only status)
+      setOrders(prev =>
+        prev.map(order =>
+          order.id === orderId
+            ? {
+                ...order,
+                status: newStatus
+              }
+            : order
+        )
+      );
+
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => ({
+          ...prev,
+          status: newStatus
+        }));
+      }
+
+      // Persist change to Supabase — only update `status` and `updated_at`
+      const { data, error } = await supabase
+        .from('orders')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId)
+        .select('id,status,updated_at')
+        .single();
+
+      if (error || !data) {
+        console.error('Failed to update order status:', JSON.stringify(error || data));
+        // rollback optimistic update
+        setOrders(prevOrders);
+        setSelectedOrder(prevSelected);
+        return;
+      }
+
+      // Reconcile local state with DB-confirmed values
+      setOrders(prev =>
+        prev.map(order =>
+          order.id === orderId
+            ? {
+                ...order,
+                status: data.status,
+                updatedAt: data.updated_at || order.updatedAt,
+              }
+            : order
+        )
+      );
+
+      setSelectedOrder(prev =>
+        prev && prev.id === orderId
+          ? { ...prev, status: data.status, updatedAt: data.updated_at || prev.updatedAt }
+          : prev
+      );
+
+      // Revert stock only after DB confirmation of cancellation
+      if (data.status === 'cancelled') {
+        const confirmedOrder = prevOrders.find(o => o.id === orderId);
+        if (confirmedOrder) revertMultipleItems(confirmedOrder.items);
+      }
+
+      console.log('Order status updated successfully:', data);
+    } catch (err) {
+      console.error('Unexpected error updating status:', err);
+      // rollback
+      setOrders(prevOrders);
+      setSelectedOrder(prevSelected);
+    } finally {
+      setLoadingStatus(null);
+    }
+  };
 
   useEffect(() => {
     let filtered = orders;
@@ -33,8 +204,8 @@ const OrderManagement = () => {
     // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(order =>
-        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.phone.includes(searchTerm)
+        (order.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.phone || '').includes(searchTerm)
       );
     }
 
@@ -45,27 +216,6 @@ const OrderManagement = () => {
 
     setFilteredOrders(filtered);
   }, [orders, searchTerm, statusFilter]);
-
-  const updateOrderStatus = (orderId, newStatus) => {
-    const updatedOrders = orders.map(order => {
-      if (order.id === orderId) {
-        // If cancelling, revert stock
-        if (newStatus === 'cancelled' && order.status !== 'cancelled') {
-          revertMultipleItems(order.items);
-        }
-        return { ...order, status: newStatus, cancelledBy: newStatus === 'cancelled' ? 'admin' : undefined };
-      }
-      return order;
-    });
-
-    setOrders(updatedOrders);
-    localStorage.setItem('simple-dough-orders', JSON.stringify(updatedOrders));
-
-    // Also update selectedOrder if modal is open
-    if (selectedOrder && selectedOrder.id === orderId) {
-      setSelectedOrder({ ...selectedOrder, status: newStatus });
-    }
-  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -158,9 +308,8 @@ const OrderManagement = () => {
                     </h3>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(order.status)}`}>
                       {getStatusIcon(order.status)}
-                      {order.status === 'cancelled' && order.cancelledBy === 'admin'
-                      ? 'Cancelled by SimpleDough'
-                      : statusOptions.find(s => s.value === order.status)?.label || order.status}
+                      {/* show the readable label from statusOptions */}
+                      {statusOptions.find(s => s.value === order.status)?.label || order.status}
                     </span>
                   </div>
 
@@ -186,7 +335,7 @@ const OrderManagement = () => {
                   <div className="mt-2">
                     <span className="text-lg font-bold text-amber-600">₱{order.total}</span>
                     <span className="text-sm text-gray-600 ml-2">
-                      via {order.paymentMethod.toUpperCase()}
+                      via {(order.paymentMethod || "unknown").toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -204,9 +353,9 @@ const OrderManagement = () => {
                   {/* Status Update Dropdown */}
                   <select
                     value={order.status}
-                    onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                    onChange={(e) => handleStatusChange(order.id, e.target.value)}
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={order.status === 'cancelled' || order.status === 'delivered'}
+                    disabled={order.status === 'cancelled' || order.status === 'delivered' || loadingStatus === order.id}
                   >
                     {statusOptions.map(option => (
                       <option
@@ -258,12 +407,11 @@ const OrderManagement = () => {
               <div className="flex items-center gap-3">
                 <span className={`px-4 py-2 rounded-full text-sm font-medium border flex items-center gap-2 ${getStatusColor(selectedOrder.status)}`}>
                   {getStatusIcon(selectedOrder.status)}
-                  {selectedOrder.status === 'cancelled' && selectedOrder.cancelledBy === 'admin'
-                  ? 'Cancelled by SimpleDough'
-                  : statusOptions.find(s => s.value === selectedOrder.status)?.label || selectedOrder.status}
+                  {statusOptions.find(s => s.value === selectedOrder.status)?.label || selectedOrder.status}
                 </span>
                 <span className="text-sm text-gray-600">
-                  Ordered on {new Date(selectedOrder.createdAt).toLocaleString()}
+                  Ordered on {toPHT(selectedOrder.createdAt).toLocaleDateString()}{" "}
+                  {toPHT(selectedOrder.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
 
